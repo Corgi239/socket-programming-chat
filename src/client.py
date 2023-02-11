@@ -2,6 +2,7 @@ import sys
 import socket
 import selectors
 import types
+import codecs 
 import threading
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
@@ -15,6 +16,7 @@ class client_thread(threading.Thread):
         threading.Thread.__init__(self)
         self.sel = selectors.DefaultSelector()
         self.message = b"Message from client."
+        self.data = None
 
     def __start_connection(self, host, port):
         server_addr = (host, port)
@@ -26,6 +28,7 @@ class client_thread(threading.Thread):
         data = types.SimpleNamespace(
             outbound=self.message,
         )
+        self.data = data
         self.sel.register(sock, events, data=data)
 
     def __service_connection(self, key, mask):
@@ -44,6 +47,9 @@ class client_thread(threading.Thread):
                 print(f"Sending {data.outbound!r} to server")
                 sent = sock.send(data.outbound)  # Should be ready to write
                 data.outbound = data.outbound[sent:]
+    
+    def send_message(self, msg):
+        self.data.outbound += codecs.encode(msg,"utf-8")
 
     def run(self):
         self.__start_connection(HOST, PORT)
@@ -64,9 +70,17 @@ class window(QMainWindow):
         self.setGeometry(500, 300, 700, 700)
         self.setWindowTitle("Echo Client")
 
+        self.msg_box = QtWidgets.QLineEdit(self)
+        self.send_button = QtWidgets.QPushButton(self)
+        self.send_button.setText("Send")
+        self.send_button.move(0,50)
+        self.send_button.clicked.connect(lambda: self.send_message(self.msg_box.text()))
         # self.timer = QTimer()
         # self.timer.timeout.connect(self.__update_connections)
         # self.timer.start(500)
+
+    def send_message(self, msg):
+        client.send_message(msg)
 
     def closeEvent(self, event):
         close = QtWidgets.QMessageBox.question(self,

@@ -25,7 +25,7 @@ class server_thread(threading.Thread):
         conn, addr = sock.accept()  # Should be ready to read
         print(f"Accepted connection from {addr}")
         conn.setblocking(False)
-        data = types.SimpleNamespace(addr=addr, outbound=b"", name="Unregistered")
+        data = types.SimpleNamespace(addr=addr, outbound=b"", name="Not authenticated")
         events = selectors.EVENT_READ | selectors.EVENT_WRITE
         self.sel.register(conn, events, data=data)
 
