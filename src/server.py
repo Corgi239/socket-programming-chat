@@ -27,6 +27,7 @@ class server_thread(threading.Thread):
         self.ipv6_listening_sock = None
         self.sel = selectors.DefaultSelector()
         self.user_base = {}
+        self.user_groups = {}
 
     def __accept_wrapper(self, sock):
         conn, addr = sock.accept()  # Should be ready to read
@@ -83,19 +84,41 @@ class server_thread(threading.Thread):
                     user_data.username = username
                     user_data.status = "Online"
                     self.user_base[username] = user_data
-                case "MSG":
+                case "DMS":
                     print(f"Received: {message}")
                     (timestamp, receiver) = metadata.split('#')
                     receiver_data = self.user_base[receiver]
-                    # user_data.outbound = codecs.encode(f"MSG|{user_data.username}|{content}", "utf-8")
-                    receiver_data.buffer.put(codecs.encode(f"MSG|{timestamp}#{user_data.username}|{content}", "utf-8"))
+                    message = f"DMS|{timestamp}#{user_data.username}|{content}"
+                    receiver_data.buffer.put(codecs.encode(message, "utf-8"))
                 case "CUS":
                     timestamp = metadata
                     username = content
                     print(f"Checking status of {username}")
-                    last_online = self.user_base[username].last_online
-                    responce = f"CUS|{timestamp}#{username}|{last_online}"
-                    user_data.buffer.put(codecs.encode(responce, "utf-8"))
+                    if username in self.user_groups.keys():
+                        for user in self.user_groups[username]:
+                            last_online = self.user_base[user].last_online
+                            responce = f"CUS|{timestamp}#{user}#{username}|{last_online}"
+                            user_data.buffer.put(codecs.encode(responce, "utf-8"))
+                    else:
+                        last_online = self.user_base[username].last_online
+                        responce = f"CUS|{timestamp}#{username}|{last_online}"
+                        user_data.buffer.put(codecs.encode(responce, "utf-8"))
+                case "ADG":
+                    groupname = metadata
+                    members = content.split(',')
+                    if groupname not in self.user_groups.keys():
+                        print(f"Registering group {groupname} with members {', '.join(members)}")
+                        self.user_groups[groupname] = members
+                case "GMS":
+                    print(f"Received: {message}")
+                    (timestamp, groupname) = metadata.split('#')
+                    if groupname in self.user_groups.keys():
+                        for receiver in self.user_groups[groupname]:
+                            receiver_data = self.user_base[receiver]
+                            message = f"GMS|{timestamp}#{groupname}#{user_data.username}|{content}"
+                            receiver_data.buffer.put(codecs.encode(message, "utf-8"))
+
+
         except ValueError:
             print(f"Corrupted message: {message}")
 

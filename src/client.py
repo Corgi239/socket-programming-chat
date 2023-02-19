@@ -22,6 +22,7 @@ class client_thread(threading.Thread):
         self.sock = None
         self.data = None
         self.chats = {}
+        self.groupchats = []
 
     def start_connection(self, host, port, username, ipv4=True):
         self.close_connection()
@@ -73,7 +74,7 @@ class client_thread(threading.Thread):
         try:
             (header, metadata, content) = message.split('|')
             match header:
-                case "MSG":
+                case "DMS":
                     print(f"Received: {message}")
                     (timestamp, sender) = metadata.split('#')
                     timestamp = datetime.strptime(timestamp, TIMESTAMP_FORMAT)
@@ -81,13 +82,27 @@ class client_thread(threading.Thread):
                         self.add_contact(sender)
                     self.chats[sender].append((timestamp, sender, content))
                 case "CUS":
-                    (timestamp, username) = metadata.split('#')
+                    # (timestamp, username) = metadata.split('#')
+                    timestamp = metadata.split('#')[0]
+                    username = metadata.split('#')[1]
                     timestamp = datetime.strptime(timestamp, TIMESTAMP_FORMAT)
                     if content == "Now":
                         message = f"{username} is currently online"
                     else:
                         message = f"{username} was last online on {content}"
-                    self.chats[username].append((timestamp, "server message", message))
+                    if metadata.count('#') > 1:
+                        groupname = metadata.split('#')[2]
+                        self.chats[groupname].append((timestamp, "server message", message))
+                    else:
+                        self.chats[username].append((timestamp, "server message", message))
+                case "GMS":
+                    print(f"Received: {message}")
+                    (timestamp, groupname, sender) = metadata.split('#')
+                    timestamp = datetime.strptime(timestamp, TIMESTAMP_FORMAT)
+                    if groupname not in self.chats.keys():
+                        self.add_contact(groupname)
+                        self.groupchats.append(groupname)
+                    self.chats[groupname].append((timestamp, sender, content))
                 case _:
                     print(f"Unknown header: {header}")
         except ValueError:
@@ -97,12 +112,25 @@ class client_thread(threading.Thread):
     def add_contact(self, username):
         print(f"Adding contact: {username}")
         if username not in self.chats.keys():
-                    self.chats[username] = []
+            self.chats[username] = []
+
+    def add_group(self, groupname, members):
+        print(f"Adding group: {groupname}")
+        if self.username not in members:
+            members = members + f",{self.username}"
+        if groupname not in self.chats.keys():
+            self.groupchats.append(groupname)
+            self.chats[groupname] = []
+            request = f"ADG|{groupname}|{members}"
+            self.data.outbound = codecs.encode(request, "utf-8")
 
     def send_message(self, receiver, msg):
         now = datetime.now().strftime(TIMESTAMP_FORMAT)
-        self.data.outbound += codecs.encode(f"MSG|{now}#{receiver}|{msg}", "utf-8")
-        self.chats[receiver].append((datetime.now(), self.username, msg))
+        if receiver in self.groupchats:
+            self.data.outbound += codecs.encode(f"GMS|{now}#{receiver}|{msg}", "utf-8")
+        else:
+            self.data.outbound += codecs.encode(f"DMS|{now}#{receiver}|{msg}", "utf-8")
+            self.chats[receiver].append((datetime.now(), self.username, msg))
 
     def check_user_status(self, username):
         now = datetime.now().strftime(TIMESTAMP_FORMAT)
@@ -156,6 +184,10 @@ class Window(QtWidgets.QMainWindow):
         self.ui.check_status_button.clicked.connect(lambda: client_process.check_user_status(
             username=self.ui.chat_selection.currentText()
         ))
+        self.ui.add_group_button.clicked.connect(lambda: client_process.add_group(
+            groupname=self.ui.new_group_name_input.text(),
+            members=self.ui.new_group_members.text()
+        ))
 
     def __render_chat_window(self):
         def format_message(message):
@@ -163,7 +195,7 @@ class Window(QtWidgets.QMainWindow):
             return f"[{timestamp}] {message[1]}: {message[2]}"
         chat_name = chat_name=self.ui.chat_selection.currentText()
         if chat_name in client_process.chats.keys():
-            chat = '\n'.join(format_message(e) for e in client_process.chats[chat_name])
+            chat = '\n'.join(format_message(e) for e in client_process.chats[chat_name][::-1])
             self.ui.chat_display.setPlainText(chat)
 
     def __update_chat_list(self):
