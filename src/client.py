@@ -105,7 +105,8 @@ class Window(QtWidgets.QMainWindow):
         self.username = username
         self.timer = QTimer()
         self.timer.timeout.connect(self.__render_chat_window)
-        self.timer.start(1000)
+        self.timer.timeout.connect(self.__update_chat_list)
+        self.timer.start(200)
 
     def setup(self):
         self.ui.setupUi(self)
@@ -133,9 +134,14 @@ class Window(QtWidgets.QMainWindow):
             chat = '\n'.join(str(e) for e in client_process.chats[chat_name])
             self.ui.chat_display.setPlainText(chat)
 
+    def __update_chat_list(self):
+        client_chat_names = client_process.chats.keys()
+        for chat_name in client_chat_names:
+            if self.ui.chat_selection.findText(chat_name) == -1:
+                self.ui.chat_selection.addItem(chat_name)
+
     def __add_contact(self, username):
         client_process.add_contact(username)
-        self.ui.chat_selection.addItem(username)
 
     def closeEvent(self, event):
         # close = QtWidgets.QMessageBox.question(self,
