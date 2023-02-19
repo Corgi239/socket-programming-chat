@@ -96,9 +96,10 @@ class server_thread(threading.Thread):
                     print(f"Checking status of {username}")
                     if username in self.user_groups.keys():
                         for user in self.user_groups[username]:
-                            last_online = self.user_base[user].last_online
-                            responce = f"CUS|{timestamp}#{user}#{username}|{last_online}"
-                            user_data.buffer.put(codecs.encode(responce, "utf-8"))
+                            if user != user_data.username:
+                                last_online = self.user_base[user].last_online
+                                responce = f"CUS|{timestamp}#{user}#{username}|{last_online}"
+                                user_data.buffer.put(codecs.encode(responce, "utf-8"))
                     else:
                         last_online = self.user_base[username].last_online
                         responce = f"CUS|{timestamp}#{username}|{last_online}"
