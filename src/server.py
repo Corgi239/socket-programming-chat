@@ -10,7 +10,6 @@ import pandas as pd
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QMessageBox
 from PyQt5.QtCore import QTimer
-from PyQt5.QtGui import QStandardItemModel, QStandardItem
 from ui.compiled.server_ui import Ui_Server
 from ui.compiled.table_model import DictionaryTableModel
 
@@ -53,20 +52,25 @@ class server_thread(threading.Thread):
 
     def __process_segment(self, segment, user_data):
         message = codecs.decode(segment, "utf-8")
-        if len(message) < 3:
-            return
-        header = message[:3]
-        print(header)
+        try:
+            (header, metadata, content) = message.split('|')
+        except ValueError:
+            print(f"Corrupted message: {message}")
+
         match header:
             case "REG":
-                username = message[3:]
+                username = content
                 print(f"Registered user {username}")
                 user_data.username = username
                 user_data.status = "Online"
                 self.user_base[username] = user_data
-                user_data.outbound = b"SERRegistration confirmed"
+                user_data.outbound = b"SER||Registration confirmed"
             case "MSG":
-                user_data.outbound = codecs.encode(message, "utf-8")
+                print(f"Received: {message}")
+                receiver = metadata
+                receiver_data = self.user_base[receiver]
+                # user_data.outbound = codecs.encode(f"MSG|{user_data.username}|{content}", "utf-8")
+                receiver_data.outbound = codecs.encode(f"MSG|{user_data.username}|{content}", "utf-8")
 
     def start_server(self, host, port):
         self.stop_server()
