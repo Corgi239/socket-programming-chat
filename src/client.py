@@ -4,12 +4,15 @@ import selectors
 import types
 import codecs 
 import threading
+from datetime import datetime
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import QTimer
 from ui.compiled.client_ui import Ui_Client
+from utils.comms import *
 
 # HOST = "127.0.0.1"  # The server's hostname or IP address
 # PORT = 65432  # The port used by the server
+TIMESTAMP_FORMAT = '%d/%m/%y %H:%M:%S'
 
 class client_thread(threading.Thread):
     def __init__(self):
@@ -20,12 +23,16 @@ class client_thread(threading.Thread):
         self.data = None
         self.chats = {}
 
-    def start_connection(self, host, port, username):
+    def start_connection(self, host, port, username, ipv4=True):
         self.close_connection()
         self.username = username
         server_addr = (host, port)
         print(f"Starting connection to {server_addr}")
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if ipv4:
+            sock_family = socket.AF_INET
+        else:
+            sock_family = socket.AF_INET6
+        self.sock = socket.socket(sock_family, socket.SOCK_STREAM)
         self.sock.setblocking(False)
         self.sock.connect_ex(server_addr)
         events = selectors.EVENT_READ | selectors.EVENT_WRITE
@@ -46,7 +53,8 @@ class client_thread(threading.Thread):
         sock = key.fileobj
         data = key.data
         if mask & selectors.EVENT_READ:
-            recv_data = sock.recv(1024)  # Should be ready to read
+            # recv_data = sock.recv(1024)  # Should be ready to read
+            recv_data = recv_msg(sock)
             if recv_data:
                 self.__process_segment(recv_data)
             if not recv_data:
@@ -55,25 +63,36 @@ class client_thread(threading.Thread):
         if mask & selectors.EVENT_WRITE:
             if data.outbound:
                 print(f"Sending {data.outbound!r} to server")
-                sent = sock.send(data.outbound)  # Should be ready to write
-                data.outbound = data.outbound[sent:]
+                # sent = sock.send(data.outbound)  # Should be ready to write
+                # data.outbound = data.outbound[sent:]
+                send_msg(sock, data.outbound)
+                data.outbound = b""
     
     def __process_segment(self, segment):
         message = codecs.decode(segment, "utf-8")
         try:
             (header, metadata, content) = message.split('|')
+            match header:
+                case "MSG":
+                    print(f"Received: {message}")
+                    (timestamp, sender) = metadata.split('#')
+                    timestamp = datetime.strptime(timestamp, TIMESTAMP_FORMAT)
+                    if sender not in self.chats.keys():
+                        self.add_contact(sender)
+                    self.chats[sender].append((timestamp, sender, content))
+                case "CUS":
+                    (timestamp, username) = metadata.split('#')
+                    timestamp = datetime.strptime(timestamp, TIMESTAMP_FORMAT)
+                    if content == "Now":
+                        message = f"{username} is currently online"
+                    else:
+                        message = f"{username} was last online on {content}"
+                    self.chats[username].append((timestamp, "server message", message))
+                case _:
+                    print(f"Unknown header: {header}")
         except ValueError:
             print(f"Corrupted message: {message}")
 
-        match header:
-            case "MSG":
-                print(f"Received: {message}")
-                sender = metadata
-                if sender not in self.chats.keys():
-                    self.add_contact(sender)
-                self.chats[sender].append(f"{sender}: {content}")
-            case _:
-                print(f"Unknown header: {header}")
     
     def add_contact(self, username):
         print(f"Adding contact: {username}")
@@ -81,8 +100,14 @@ class client_thread(threading.Thread):
                     self.chats[username] = []
 
     def send_message(self, receiver, msg):
-        self.data.outbound += codecs.encode(f"MSG|{receiver}|{msg}", "utf-8")
-        self.chats[receiver].append(f"{self.username}: {msg}")
+        now = datetime.now().strftime(TIMESTAMP_FORMAT)
+        self.data.outbound += codecs.encode(f"MSG|{now}#{receiver}|{msg}", "utf-8")
+        self.chats[receiver].append((datetime.now(), self.username, msg))
+
+    def check_user_status(self, username):
+        now = datetime.now().strftime(TIMESTAMP_FORMAT)
+        request = f"CUS|{now}|{username}"
+        self.data.outbound = codecs.encode(request, "utf-8")
 
     def run(self):
         while True:
@@ -114,7 +139,8 @@ class Window(QtWidgets.QMainWindow):
         self.ui.connect_button.clicked.connect(lambda: client_process.start_connection(
             host=self.ui.host_input.text(),
             port=int(self.ui.port_input.text()),
-            username=self.ui.username_input.text()
+            username=self.ui.username_input.text(),
+            ipv4=self.ui.ipv4_radio.isChecked()
         ))
         self.ui.disconnect_button.clicked.connect(client_process.close_connection)
         self.ui.send_button.clicked.connect(lambda: client_process.send_message(
@@ -127,11 +153,17 @@ class Window(QtWidgets.QMainWindow):
             username=self.ui.new_contact_username_input.text()
         ))
         self.ui.chat_selection.currentTextChanged.connect(lambda: self.__render_chat_window)
+        self.ui.check_status_button.clicked.connect(lambda: client_process.check_user_status(
+            username=self.ui.chat_selection.currentText()
+        ))
 
     def __render_chat_window(self):
+        def format_message(message):
+            timestamp = message[0].strftime('%H:%M:%S')
+            return f"[{timestamp}] {message[1]}: {message[2]}"
         chat_name = chat_name=self.ui.chat_selection.currentText()
         if chat_name in client_process.chats.keys():
-            chat = '\n'.join(str(e) for e in client_process.chats[chat_name])
+            chat = '\n'.join(format_message(e) for e in client_process.chats[chat_name])
             self.ui.chat_display.setPlainText(chat)
 
     def __update_chat_list(self):

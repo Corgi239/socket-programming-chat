@@ -127,7 +127,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>127.0.0.1</string>
+     <string>::1</string>
     </property>
    </widget>
    <widget class="QLineEdit" name="port_input">

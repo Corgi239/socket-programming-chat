@@ -89,7 +89,7 @@ class Ui_Client(object):
         self.label_9.setAlignment(QtCore.Qt.AlignCenter)
         self.label_9.setObjectName("label_9")
         self.chat_selection = QtWidgets.QComboBox(self.centralwidget)
-        self.chat_selection.setGeometry(QtCore.QRect(110, 300, 91, 32))
+        self.chat_selection.setGeometry(QtCore.QRect(60, 300, 91, 32))
         self.chat_selection.setObjectName("chat_selection")
         self.label_10 = QtWidgets.QLabel(self.centralwidget)
         self.label_10.setGeometry(QtCore.QRect(10, 300, 60, 31))
@@ -104,6 +104,9 @@ class Ui_Client(object):
         self.add_contact_button.setGeometry(QtCore.QRect(280, 210, 51, 31))
         self.add_contact_button.setDefault(False)
         self.add_contact_button.setObjectName("add_contact_button")
+        self.check_status_button = QtWidgets.QPushButton(self.centralwidget)
+        self.check_status_button.setGeometry(QtCore.QRect(210, 300, 113, 32))
+        self.check_status_button.setObjectName("check_status_button")
         Client.setCentralWidget(self.centralwidget)
 
         self.retranslateUi(Client)
@@ -131,6 +134,7 @@ class Ui_Client(object):
         self.label_10.setText(_translate("Client", "Chat:"))
         self.disconnect_button.setText(_translate("Client", "Disconnect"))
         self.add_contact_button.setText(_translate("Client", "Add"))
+        self.check_status_button.setText(_translate("Client", "Check Status"))
 
 
 if __name__ == "__main__":

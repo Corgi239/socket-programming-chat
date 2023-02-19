@@ -87,7 +87,7 @@ class Ui_Server(object):
         self.label_6.setText(_translate("Server", "Port:"))
         self.label.setText(_translate("Server", "*Server settings*"))
         self.ipv4_host_input.setText(_translate("Server", "127.0.0.1"))
-        self.ipv6_host_input.setText(_translate("Server", "127.0.0.1"))
+        self.ipv6_host_input.setText(_translate("Server", "::1"))
         self.port_input.setText(_translate("Server", "65432"))
         self.start_button.setText(_translate("Server", "Start"))
         self.stop_button.setText(_translate("Server", "Stop"))
