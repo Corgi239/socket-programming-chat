@@ -5,31 +5,40 @@ import types
 import codecs 
 import threading
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
-from PyQt5.QtCore import QTimer
+from ui.compiled.client_ui import Ui_Client
 
-HOST = "127.0.0.1"  # The server's hostname or IP address
-PORT = 65432  # The port used by the server
+# HOST = "127.0.0.1"  # The server's hostname or IP address
+# PORT = 65432  # The port used by the server
 
 class client_thread(threading.Thread):
-    def __init__(self, host, port):
+    def __init__(self):
         threading.Thread.__init__(self)
         self.sel = selectors.DefaultSelector()
-        self.message = b"Message from client."
+        self.sock = None
         self.data = None
+        self.known_users = []
+        self.chats = {}
 
-    def __start_connection(self, host, port):
+    def start_connection(self, host, port, username):
+        self.close_connection()
         server_addr = (host, port)
         print(f"Starting connection to {server_addr}")
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(False)
-        sock.connect_ex(server_addr)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setblocking(False)
+        self.sock.connect_ex(server_addr)
         events = selectors.EVENT_READ | selectors.EVENT_WRITE
         data = types.SimpleNamespace(
-            outbound=self.message,
+            outbound=codecs.encode("REG" + username, "utf-8")
         )
         self.data = data
-        self.sel.register(sock, events, data=data)
+        self.sel.register(self.sock, events, data=data)
+
+    def close_connection(self):
+        if self.sock:
+            print("Closing connection with server")
+            self.sel.unregister(self.sock)
+            self.sock.close()
+            self.sock = None
 
     def __service_connection(self, key, mask):
         sock = key.fileobj
@@ -39,8 +48,7 @@ class client_thread(threading.Thread):
             if recv_data:
                 print(f"Received {recv_data!r} from server")
             if not recv_data:
-                print(f"Closing connection with server")
-                self.sel.unregister(sock)
+                self.close_connection()
                 sock.close()
         if mask & selectors.EVENT_WRITE:
             if data.outbound:
@@ -48,59 +56,68 @@ class client_thread(threading.Thread):
                 sent = sock.send(data.outbound)  # Should be ready to write
                 data.outbound = data.outbound[sent:]
     
-    def send_message(self, msg):
-        self.data.outbound += codecs.encode(msg,"utf-8")
+    def __process_segment(self, segment):
+        message = codecs.decode(segment, "utf-8")
+        if len(message) < 3:
+            return
+        header = message[:3]
+        print(header)
+        match header:
+            case "MSG":
+                self.data.outbound = codecs.encode(message, "utf-8")
+    
+    def send_message(self, receiver, msg):
+        self.data.outbound += codecs.encode("MSG" + msg,"utf-8")
 
     def run(self):
-        self.__start_connection(HOST, PORT)
         while True:
             if shutdown_event.is_set():
                 print("Shutting down the client...")
                 self.sel.close()
                 break
-            events = self.sel.select(timeout=-1)
-            for key, mask in events:
-                self.__service_connection(key, mask)
+            if not self.sel:
+                continue
+            else:
+                events = self.sel.select(timeout=-1)
+                for key, mask in events:
+                    self.__service_connection(key, mask)
 
-class window(QMainWindow):
+class Window(QtWidgets.QMainWindow):
+
     def __init__(self):
         super().__init__()
+        self.ui = Ui_Client()
 
-    def createUI(self):
-        self.setGeometry(500, 300, 700, 700)
-        self.setWindowTitle("Echo Client")
-
-        self.msg_box = QtWidgets.QLineEdit(self)
-        self.send_button = QtWidgets.QPushButton(self)
-        self.send_button.setText("Send")
-        self.send_button.move(0,50)
-        self.send_button.clicked.connect(lambda: self.send_message(self.msg_box.text()))
-        # self.timer = QTimer()
-        # self.timer.timeout.connect(self.__update_connections)
-        # self.timer.start(500)
-
-    def send_message(self, msg):
-        client.send_message(msg)
+    def setup(self):
+        self.ui.setupUi(self)
+        self.ui.connect_button.clicked.connect(lambda: client_process.start_connection(
+            host=self.ui.host_input.text(),
+            port=int(self.ui.port_input.text()),
+            username=self.ui.username_input.text()
+        ))
+        self.ui.diconnect_button.clicked.connect(client_process.close_connection)
+        self.ui.send_button.clicked.connect(lambda: client_process.send_message(
+            msg=self.ui.message_input.toPlainText()
+        ))
 
     def closeEvent(self, event):
-        close = QtWidgets.QMessageBox.question(self,
-            "QUIT",
-            "Are you sure want to stop process?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-        if close == QMessageBox.Yes:
+        # close = QtWidgets.QMessageBox.question(self,
+        #     "QUIT",
+        #     "Are you sure want to stop process?",
+        #     QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        # if close == QtWidgets.QMessageBox.Yes:
             shutdown_event.set()
-            client.join()
+            client_process.join()
             event.accept()
-        else:
-            event.ignore()
-
+        # else:
+        #     event.ignore()
 
 shutdown_event = threading.Event()
-client = client_thread(HOST, PORT)
-client.start()
+client_process = client_thread()
+client_process.start()
 
-gui = QApplication(sys.argv)
-window = window()
-window.createUI()
-window.show()
-sys.exit(gui.exec_())
+app = QtWidgets.QApplication(sys.argv)
+ui = Window()
+ui.setup()
+ui.show()
+sys.exit(app.exec_())
